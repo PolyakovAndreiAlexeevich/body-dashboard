@@ -219,7 +219,7 @@ function charts(rows, metrics){
 }
 
 // Один день — одна точка: первое за день взвешивание с замером состава тела (утро, без влияния еды)
-function dailyOf(rows){ const m=new Map(); for(const r of rows){ const k=r.t.toLocaleDateString("sv-SE"); const c=m.get(k); if(!c || (c.BodyFat==null && r.BodyFat!=null)) m.set(k,r); } return [...m.values()]; }
+function dailyOf(rows){ const m=new Map(); for(const r of rows){ const k=new Date(r.t-4*3600e3).toLocaleDateString("sv-SE"); const c=m.get(k); if(!c || (c.BodyFat==null && r.BodyFat!=null)) m.set(k,r); } return [...m.values()]; }
 
 function watchBlock(app){
   app.insertAdjacentHTML("beforeend",`<h2>Часы Amazfit Balance</h2><div class="card muted">Скоро: пульс, сон, стресс и готовность к тренировке. Место для этих данных уже заложено.</div>`);
