@@ -147,17 +147,17 @@ function foodBlock(app){
   const F = (D.food||[]), T = D.targets;
   app.insertAdjacentHTML("beforeend",`<h2>Питание</h2>`);
   if(!F.length || !T){ app.insertAdjacentHTML("beforeend",`<div class="card muted">Пока нет записей. Пиши в Telegram-бот, что съел, с весом в граммах — например «гречка 200, курица 150».</div>`); return; }
-  const todayISO = new Date().toLocaleDateString("sv-SE");
+  const todayISO = new Date(Date.now()-4*3600e3).toLocaleDateString("sv-SE"); // до 4:00 — ещё вчера
   const t = F.find(d=>d.date===todayISO) || {kcal:0,protein:0,fat:0,carbs:0};
-  const last7 = F.slice(-7), a = k => Math.round(last7.reduce((s,d)=>s+d[k],0)/last7.length);
+  const done = F.filter(d=>d.date<todayISO), last7 = done.slice(-7), a = k => last7.length ? Math.round(last7.reduce((s,d)=>s+d[k],0)/last7.length) : 0;
   const pc = (v,n)=>Math.round(v/n*100);
   app.insertAdjacentHTML("beforeend",`<div class="grid">
     <div class="card kpi"><div class="name">Калории сегодня</div><div class="val">${t.kcal} <span class="small muted">/ ${T.kcal} ккал</span></div>
       <div class="bar"><div style="width:${Math.min(100,pc(t.kcal,T.kcal))}%"></div></div><p class="muted">Норма для набора: обмен в покое ≈ ${T.bmr} ккал × активность + 300 ккал сверху.</p></div>
     <div class="card kpi"><div class="name">Белок сегодня</div><div class="val">${t.protein} <span class="small muted">/ ${T.protein} г</span></div>
       <div class="bar"><div style="width:${Math.min(100,pc(t.protein,T.protein))}%"></div></div><p class="muted">Белок — строительный материал мышц. Норма около 1,8 г на кг веса.</p></div>
-    <div class="card kpi"><div class="name">В среднем за ${last7.length} дн.</div><div class="val">${a("kcal")} <span class="small muted">ккал</span></div>
-      <span class="pill ${a("kcal")>=T.kcal*0.95?"good":"bad"}">${pc(a("kcal"),T.kcal)}% нормы</span> <span class="pill ${a("protein")>=T.protein*0.9?"good":"bad"}">белок ${a("protein")} г</span>
+    <div class="card kpi"><div class="name">В среднем за ${last7.length} законч. дн.</div><div class="val">${last7.length?a("kcal"):"—"} <span class="small muted">ккал</span></div>
+      ${last7.length ? `<span class="pill ${a("kcal")>=T.kcal*0.95?"good":"bad"}">${pc(a("kcal"),T.kcal)}% нормы</span> <span class="pill ${a("protein")>=T.protein*0.9?"good":"bad"}">белок ${a("protein")} г</span>` : `<span class="pill neu">появится после первого полного дня</span>`}
       <p class="muted">Если вес не растёт, а калорий меньше нормы — дело в еде, а не в тренировках.</p></div>
   </div><div class="charts" style="margin-top:12px"><div class="card"><b>Калории по дням</b><canvas id="c_food"></canvas></div><div class="card"><b>Белок по дням</b> <span class="muted small">г</span><canvas id="c_prot"></canvas></div></div>`);
   if(!window.Chart) return;
