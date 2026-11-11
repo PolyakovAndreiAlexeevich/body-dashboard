@@ -155,7 +155,7 @@ function foodBlock(app){
     <div class="card kpi"><div class="name">Калории сегодня</div><div class="val">${t.kcal} <span class="small muted">/ ${T.kcal} ккал</span></div>
       <div class="bar"><div style="width:${Math.min(100,pc(t.kcal,T.kcal))}%"></div></div><p class="muted">Норма для набора: обмен в покое ≈ ${T.bmr} ккал × активность + 300 ккал сверху.</p></div>
     <div class="card kpi"><div class="name">Белок сегодня</div><div class="val">${t.protein} <span class="small muted">/ ${T.protein} г</span></div>
-      <div class="bar"><div style="width:${Math.min(100,pc(t.protein,T.protein))}%"></div></div><p class="muted">Белок — строительный материал мышц. Норма около 1,8 г на кг веса.</p></div>
+      <div class="bar"><div style="width:${Math.min(100,pc(t.protein,T.protein))}%"></div></div><p class="muted">Белок — строительный материал мышц. Норма растёт ступенями по 10 г: от 120 г к 2 г на кг веса, когда стабильно добираешь текущую.</p></div>
     <div class="card kpi"><div class="name">В среднем за ${last7.length} законч. дн.</div><div class="val">${last7.length?a("kcal"):"—"} <span class="small muted">ккал</span></div>
       ${last7.length ? `<span class="pill ${a("kcal")>=T.kcal*0.95?"good":"bad"}">${pc(a("kcal"),T.kcal)}% нормы</span> <span class="pill ${a("protein")>=T.protein*0.9?"good":"bad"}">белок ${a("protein")} г</span>` : `<span class="pill neu">появится после первого полного дня</span>`}
       <p class="muted">Если вес не растёт, а калорий меньше нормы — дело в еде, а не в тренировках.</p></div>
