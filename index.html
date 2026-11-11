@@ -222,7 +222,64 @@ function charts(rows, metrics){
 function dailyOf(rows){ const m=new Map(); for(const r of rows){ const k=new Date(r.t-4*3600e3).toLocaleDateString("sv-SE"); const c=m.get(k); if(!c || (c.BodyFat==null && r.BodyFat!=null)) m.set(k,r); } return [...m.values()]; }
 
 function watchBlock(app){
-  app.insertAdjacentHTML("beforeend",`<h2>Часы Amazfit Balance</h2><div class="card muted">Скоро: пульс, сон, стресс и готовность к тренировке. Место для этих данных уже заложено.</div>`);
+  const W = D.watch;
+  app.insertAdjacentHTML("beforeend",`<h2>Часы Amazfit Balance</h2>`);
+  if(!W){ app.insertAdjacentHTML("beforeend",`<div class="card muted">Часы пока не подключены: данных из Zepp ещё нет.</div>`); return; }
+  if(!W.ok) app.insertAdjacentHTML("beforeend",`<div class="status err">⚠ ${W.message}</div>`);
+  const days = (W.days||[]);
+  if(!days.length) return;
+  const todayISO = new Date(Date.now()-4*3600e3).toLocaleDateString("sv-SE");
+  const today = days.find(d=>d.date===todayISO) || {};
+  const lastWith = k => [...days].reverse().find(d=>d[k]!=null);
+  const avg7 = k => { const v=days.filter(d=>d.date<todayISO && d[k]!=null).slice(-7).map(d=>d[k]); return v.length? v.reduce((a,b)=>a+b)/v.length : null; };
+  const hm = m => m==null ? "—" : `${Math.floor(m/60)} ч ${String(Math.round(m%60)).padStart(2,"0")} мин`;
+  const dd = s => new Date(s).toLocaleDateString("ru-RU",{day:"numeric",month:"short"});
+  const sl = lastWith("sleep_min"), hr = lastWith("rest_hr"), pai = lastWith("pai_total"), st = lastWith("stress_avg"), sp = lastWith("spo2");
+  const pill = (good, txt) => `<span class="pill ${good==null?"neu":good?"good":"bad"}">${txt}</span>`;
+  const T = D.targets, F = D.food||[];
+  // Баланс калорий: потрачено ≈ обмен в покое + активные калории с часов + 10% на переваривание еды
+  const bal = (date) => { const w=days.find(d=>d.date===date), f=F.find(d=>d.date===date); if(!w||w.active_kcal==null||!f||!T) return null; const out=T.bmr+w.active_kcal+Math.round(f.kcal*0.1); return {eat:f.kcal, out, diff:f.kcal-out}; };
+  const balDays = days.filter(d=>d.date<todayISO).map(d=>bal(d.date)).filter(Boolean).slice(-7);
+  const balAvg = balDays.length ? Math.round(balDays.reduce((a,b)=>a+b.diff,0)/balDays.length) : null;
+  const k = [];
+  k.push(`<div class="card kpi"><div class="name">Шаги сегодня</div><div class="val">${fmt(today.steps??0,0)}</div>
+    ${avg7("steps")!=null?pill(null,"в среднем "+fmt(avg7("steps"),0)+" в день"):""}
+    <p class="muted">${today.distance_km!=null?fmt(today.distance_km,1)+" км · ":""}активных калорий ${fmt(today.active_kcal??0,0)}. 7–10 тысяч шагов в день достаточно; при наборе массы больше не нужно — лишняя ходьба сжигает калории.</p></div>`);
+  if(sl) k.push(`<div class="card kpi"><div class="name">Сон ${sl.date===todayISO?"прошлой ночью":"— "+dd(sl.date)}</div><div class="val">${hm(sl.sleep_min)}</div>
+    ${pill(sl.sleep_min>=420 && sl.sleep_min<=570, sl.sleep_min<420?"мало":sl.sleep_min>570?"много":"в норме")}
+    ${avg7("sleep_min")!=null?pill(null,"в среднем "+hm(avg7("sleep_min"))):""}
+    <p class="muted">Глубокий ${hm(sl.deep_min)}, быстрый (REM) ${hm(sl.rem_min)}${sl.sleep_start?`, уснул в ${sl.sleep_start.slice(11)}`:""}. Норма 7–9 часов: мышцы растут во сне, недосып тормозит набор.</p></div>`);
+  if(hr) k.push(`<div class="card kpi"><div class="name">Пульс покоя</div><div class="val">${fmt(hr.rest_hr,0)} <span class="small muted">уд/мин</span></div>
+    ${pill(hr.rest_hr>=45&&hr.rest_hr<=80, hr.rest_hr>80?"выше нормы":hr.rest_hr<45?"очень низкий":"в норме")}
+    ${avg7("rest_hr")!=null&&Math.abs(hr.rest_hr-avg7("rest_hr"))>=5?pill(false,(hr.rest_hr>avg7("rest_hr")?"+":"")+fmt(hr.rest_hr-avg7("rest_hr"),0)+" к неделе"):""}
+    <p class="muted">Норма 50–80. Если пульс покоя вырос на 5+ ударов от обычного — организм не восстановился (недосып, болезнь, перетренированность): сделай лёгкий день.</p></div>`);
+  const bt = bal(todayISO);
+  if(balAvg!=null || bt) k.push(`<div class="card kpi"><div class="name">Баланс калорий (съел − потратил)</div><div class="val">${balAvg!=null?(balAvg>0?"+":"")+fmt(balAvg,0):"—"} <span class="small muted">ккал/день</span></div>
+    ${balAvg!=null?pill(balAvg>=200, balAvg>=200?"профицит есть":"профицита мало"):pill(null,"среднее — после первого полного дня")}
+    <p class="muted">${balAvg!=null?`Среднее за ${balDays.length} законч. дн.`:""}${bt?` Сегодня пока съел ${fmt(bt.eat,0)}, потратил ≈${fmt(bt.out,0)}.`:""} Потрачено ≈ обмен в покое + активность с часов + переваривание еды (оценка). Для набора нужен плюс 200–500 ккал.</p></div>`);
+  if(pai) k.push(`<div class="card kpi"><div class="name">PAI (баллы активности за 7 дней)</div><div class="val">${fmt(pai.pai_total,0)}</div>
+    ${pill(pai.pai_total>=100, pai.pai_total>=100?"100+ — отлично":"цель 100")}<p class="muted">Показатель Zepp: сколько нагрузки на сердце за неделю. 100 и выше — хорошая физическая активность.</p></div>`);
+  if(st) k.push(`<div class="card kpi"><div class="name">Стресс — ${dd(st.date)}</div><div class="val">${fmt(st.stress_avg,0)} <span class="small muted">из 100</span></div>
+    ${pill(st.stress_avg<40, st.stress_avg<40?"спокойно":st.stress_avg<60?"средний":"высокий")}<p class="muted">Часы оценивают напряжение по пульсу. До 40 — расслаблен, 60+ — высокий.</p></div>`);
+  if(sp) k.push(`<div class="card kpi"><div class="name">Кислород в крови — ${dd(sp.date)}</div><div class="val">${fmt(sp.spo2,0)} <span class="small muted">%</span></div>
+    ${pill(sp.spo2>=95, sp.spo2>=95?"в норме":"ниже нормы")}<p class="muted">Норма 95–100%. Ручной замер на часах.</p></div>`);
+  app.insertAdjacentHTML("beforeend",`<div class="grid">${k.join("")}</div>
+    <div class="charts" style="margin-top:12px"><div class="card"><b>Шаги</b><canvas id="c_steps"></canvas></div>
+    <div class="card"><b>Сон</b> <span class="muted small">часов</span><canvas id="c_sleep"></canvas></div>
+    <div class="card"><b>Пульс покоя</b> <span class="muted small">уд/мин</span><canvas id="c_rhr"></canvas></div></div>`);
+  const Wk = (W.workouts||[]).slice(-6).reverse();
+  app.insertAdjacentHTML("beforeend", `<div class="card" style="margin-top:12px"><b>Тренировки</b>${Wk.length?`<ul style="margin:8px 0 0;padding-left:18px">${Wk.map(w=>`<li>${new Date(w.start.replace(" ","T")).toLocaleDateString("ru-RU",{day:"numeric",month:"short"})} — ${w.type}, ${fmt(w.minutes,0)} мин, ${fmt(w.kcal,0)} ккал${w.avg_hr?`, пульс ${fmt(w.avg_hr,0)}`:""}</li>`).join("")}</ul>`:`<div class="muted small">Пока нет. Включай тренировку на часах — здесь появятся время, калории и пульс.</div>`}</div>
+    <div class="muted small" style="margin-top:6px">${W.ok?"✓ "+W.message:""}</div>`);
+  if(!window.Chart) return;
+  const cs=getComputedStyle(document.documentElement), col=n=>cs.getPropertyValue(n).trim();
+  const L = days.slice(-14), labels = L.map(d=>dd(d.date));
+  const opt = {responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:col("--muted"),maxTicksLimit:7},grid:{display:false}},y:{beginAtZero:true,ticks:{color:col("--muted")},grid:{color:col("--line")}}}};
+  new Chart(document.getElementById("c_steps"),{type:"bar",data:{labels,datasets:[{data:L.map(d=>d.steps??null),backgroundColor:col("--accent")}]},options:opt});
+  new Chart(document.getElementById("c_sleep"),{type:"bar",data:{labels,datasets:[
+    {label:"Сон",data:L.map(d=>d.sleep_min!=null?+(d.sleep_min/60).toFixed(1):null),backgroundColor:L.map(d=>d.sleep_min>=420?col("--accent"):col("--accent2"))},
+    {type:"line",label:"Норма",data:L.map(()=>7),borderColor:col("--good"),borderDash:[6,4],pointRadius:0,borderWidth:1.5}]},options:opt});
+  new Chart(document.getElementById("c_rhr"),{type:"line",data:{labels,datasets:[{data:L.map(d=>d.rest_hr??null),borderColor:col("--accent"),backgroundColor:col("--accent"),pointRadius:3,spanGaps:true,tension:.3}]},
+    options:{...opt,scales:{...opt.scales,y:{grace:"10%",ticks:{color:col("--muted")},grid:{color:col("--line")}}}}});
 }
 // Mini App: данные берём из зашифрованного data.enc, ключ — из ссылки после «#k=»
 const TG = window.Telegram && window.Telegram.WebApp;
