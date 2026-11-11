@@ -250,7 +250,7 @@ function watchBlock(app){
     ${sl.sleep_score?pill(sl.sleep_score>=70,"оценка сна "+fmt(sl.sleep_score,0)+" из 100"):""}
     ${avg7("sleep_min")!=null?pill(null,"в среднем "+hm(avg7("sleep_min"))):""}
     <p class="muted">Глубокий ${hm(sl.deep_min)}, быстрый (REM) ${hm(sl.rem_min)}${sl.sleep_start?`, уснул в ${sl.sleep_start.slice(11)}`:""}. Норма 7–9 часов: мышцы растут во сне, недосып тормозит набор.</p></div>`);
-  if(hr) k.push(`<div class="card kpi"><div class="name">Пульс покоя</div><div class="val">${fmt(hr.rest_hr,0)} <span class="small muted">уд/мин</span></div>
+  if(hr) k.push(`<div class="card kpi"><div class="name">Пульс покоя${hr.date===todayISO?"":" — "+dd(hr.date)}</div><div class="val">${fmt(hr.rest_hr,0)} <span class="small muted">уд/мин</span></div>
     ${pill(hr.rest_hr>=45&&hr.rest_hr<=80, hr.rest_hr>80?"выше нормы":hr.rest_hr<45?"очень низкий":"в норме")}
     ${avg7("rest_hr")!=null&&Math.abs(hr.rest_hr-avg7("rest_hr"))>=5?pill(false,(hr.rest_hr>avg7("rest_hr")?"+":"")+fmt(hr.rest_hr-avg7("rest_hr"),0)+" к неделе"):""}
     <p class="muted">Норма 50–80. Если пульс покоя вырос на 5+ ударов от обычного — организм не восстановился (недосып, болезнь, перетренированность): сделай лёгкий день.</p></div>`);
