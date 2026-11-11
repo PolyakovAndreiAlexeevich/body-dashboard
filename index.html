@@ -247,6 +247,7 @@ function watchBlock(app){
     <p class="muted">${today.distance_km!=null?fmt(today.distance_km,1)+" км · ":""}активных калорий ${fmt(today.active_kcal??0,0)}. 7–10 тысяч шагов в день достаточно; при наборе массы больше не нужно — лишняя ходьба сжигает калории.</p></div>`);
   if(sl) k.push(`<div class="card kpi"><div class="name">Сон ${sl.date===todayISO?"прошлой ночью":"— "+dd(sl.date)}</div><div class="val">${hm(sl.sleep_min)}</div>
     ${pill(sl.sleep_min>=420 && sl.sleep_min<=570, sl.sleep_min<420?"мало":sl.sleep_min>570?"много":"в норме")}
+    ${sl.sleep_score?pill(sl.sleep_score>=70,"оценка сна "+fmt(sl.sleep_score,0)+" из 100"):""}
     ${avg7("sleep_min")!=null?pill(null,"в среднем "+hm(avg7("sleep_min"))):""}
     <p class="muted">Глубокий ${hm(sl.deep_min)}, быстрый (REM) ${hm(sl.rem_min)}${sl.sleep_start?`, уснул в ${sl.sleep_start.slice(11)}`:""}. Норма 7–9 часов: мышцы растут во сне, недосып тормозит набор.</p></div>`);
   if(hr) k.push(`<div class="card kpi"><div class="name">Пульс покоя</div><div class="val">${fmt(hr.rest_hr,0)} <span class="small muted">уд/мин</span></div>
