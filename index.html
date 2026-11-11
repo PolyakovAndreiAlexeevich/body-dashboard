@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<title>Моё тело</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--text:#1d2330;--muted:#6b7280;--line:#e5e7eb;--good:#15803d;--goodbg:#e8f6ec;--bad:#b91c1c;--badbg:#fdecec;--neu:#4b5563;--neubg:#eef0f3;--accent:#2563eb;--accent2:#93c5fd}
+:root[data-theme="dark"]{--bg:#0f1218;--card:#181c24;--text:#e7e9ee;--muted:#9aa3b2;--line:#2a303b;--good:#4ade80;--goodbg:#14301f;--bad:#f87171;--badbg:#3a1a1a;--neu:#b6bdc9;--neubg:#232833;--accent:#60a5fa;--accent2:#1e3a8a}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1218;--card:#181c24;--text:#e7e9ee;--muted:#9aa3b2;--line:#2a303b;--good:#4ade80;--goodbg:#14301f;--bad:#f87171;--badbg:#3a1a1a;--neu:#b6bdc9;--neubg:#232833;--accent:#60a5fa;--accent2:#1e3a8a}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:1080px;margin:0 auto;padding:20px 16px 48px}
+h1{font-size:24px;margin:0 0 4px}h2{font-size:18px;margin:28px 0 12px}
+.muted{color:var(--muted)}.small{font-size:13px}
+.status{margin:12px 0;padding:10px 14px;border-radius:10px;font-size:14px}
+.status.ok{background:var(--neubg)}.status.err{background:var(--badbg);color:var(--bad)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px}
+.hero{display:grid;grid-template-columns:1.2fr 1fr;gap:16px}
+@media (max-width:760px){.hero{grid-template-columns:1fr}}
+.big{font-size:44px;font-weight:700;line-height:1.1}
+.bar{height:12px;background:var(--neubg);border-radius:6px;overflow:hidden;margin:10px 0 6px}
+.bar>div{height:100%;background:var(--accent);border-radius:6px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px}
+.kpi .name{font-size:13px;color:var(--muted)}
+.kpi .val{font-size:26px;font-weight:700;margin:2px 0}
+.pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:600;margin-right:4px}
+.good{background:var(--goodbg);color:var(--good)}.bad{background:var(--badbg);color:var(--bad)}.neu{background:var(--neubg);color:var(--neu)}
+.kpi p{margin:8px 0 0;font-size:13px}
+.advice li{margin:6px 0}
+.charts{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}
+.charts canvas{width:100%!important;height:200px!important}
+.empty{padding:28px;text-align:center}
+.tabs button{border:1px solid var(--line);background:var(--card);color:var(--text);padding:5px 12px;border-radius:999px;cursor:pointer;font-size:13px}
+.tabs button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+footer{margin-top:32px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Моё тело</h1>
+  <div class="muted small" id="sub"></div>
+  <div id="status" class="status"></div>
+  <div id="app"></div>
+  <footer class="muted small">Это не медицинская консультация. Оценки «хорошо/плохо» — по общим нормам для мужчин 18–39 лет и твоей цели набрать вес за счёт мышц. Весы считают жир, мышцы и воду косвенно (по слабому току), поэтому смотри на тренд за неделю, а не на одно взвешивание. На графиках один день — одна точка: первое взвешивание за день с замером состава тела.</footer>
+</div>
+<script>
+let D = /*__DATA__*/null;
+const $ = s => document.querySelector(s);
+const fmt = (v, d=1) => v==null ? "—" : v.toLocaleString("ru-RU",{minimumFractionDigits:d,maximumFractionDigits:d});
+
+// up: какое направление хорошо для цели (1 — рост хорошо, -1 — снижение хорошо, 0 — главное держаться в норме)
+const M = {
+  Weight:{name:"Вес",unit:"кг",d:1,up:1,thr:0.2,what:"Общий вес тела. Цель — плавно добавлять 0,25–0,5 кг в неделю: так растут мышцы, а не жир."},
+  MuscleMass:{name:"Мышечная масса",unit:"кг",d:1,up:1,thr:0.2,what:"Всё, что весы считают мышцами (вместе с водой в них). Главный показатель для набора «правильного» веса."},
+  SkeletalMuscleMass:{name:"Скелетные мышцы",unit:"кг",d:1,up:1,thr:0.2,what:"Мышцы, которые двигают тело и растут от силовых тренировок."},
+  BodyFat:{name:"Жир",unit:"%",d:1,up:-1,thr:0.3,norm:[10,20],what:"Доля жира в теле. Норма для мужчин примерно 10–20%. При наборе веса хорошо, если процент почти не растёт."},
+  VisceralFat:{name:"Висцеральный жир",unit:"ур.",d:0,up:-1,thr:1,norm:[1,9],what:"Жир вокруг внутренних органов. Уровень 1–9 — норма, 10 и выше — повод снизить."},
+  BodyWater:{name:"Вода",unit:"%",d:1,up:0,thr:0.5,norm:[50,65],what:"Доля воды в теле. Норма для мужчин примерно 50–65%. Скачет от того, сколько выпил и как спал."},
+  ProteinMass:{name:"Белок",unit:"кг",d:1,up:1,thr:0.1,what:"Сколько в теле белка (строительный материал мышц). Растёт вместе с мышцами."},
+  BoneMass:{name:"Кости",unit:"кг",d:1,up:0,thr:0.1,what:"Расчётная масса костей. Меняется очень медленно, просто для справки."},
+  BasalMetabolism:{name:"Обмен в покое (BMR)",unit:"ккал",d:0,up:1,thr:15,what:"Сколько калорий тело тратит в полном покое. Больше мышц — выше обмен. Твоя еда на день должна быть заметно выше этого числа."},
+  BMI:{name:"Индекс массы тела",unit:"",d:1,up:0,thr:0.1,norm:[18.5,25],what:"Вес относительно роста. Норма 18,5–25. Для спортивных людей не очень точен."},
+  MetabolicAge:{name:"Метаболический возраст",unit:"лет",d:0,up:-1,thr:1,what:"С каким «средним человеком» по обмену веществ тебя сравнивают весы. Меньше паспортного — хорошо."},
+  HeartRate:{name:"Пульс при взвешивании",unit:"уд/мин",d:0,up:0,thr:3,norm:[50,80],what:"Пульс в момент взвешивания. В покое норма примерно 60–80, у тренированных бывает ниже."},
+};
+
+function render(){
+  $("#sub").textContent = "Обновлено " + (D ? D.updated : "—");
+  const st = $("#status");
+  if(!D){ st.className="status err"; st.textContent="Нет данных: страница не собрана."; return; }
+  st.className = "status " + (D.ok ? "ok" : "err");
+  st.textContent = (D.ok ? "✓ " : "⚠ ") + D.message;
+  const rows = D.rows.map(r=>({...r, t:new Date(r.Date.replace(" ","T"))}));
+  const days = dailyOf(rows);
+  const app = $("#app");
+  if(!rows.length){
+    app.innerHTML = `<div class="card empty"><b>Взвешиваний пока нет.</b><br><span class="muted">Встань на весы утром, после туалета и до еды. Через сутки данные появятся здесь сами.</span></div>`;
+    foodBlock(app); watchBlock(app); return;
+  }
+  const last = days[days.length-1], first = days[0];
+  const metrics = Object.keys(M).filter(k=>rows.some(r=>r[k]!=null));
+
+  // среднее за 7 дней до даты
+  const avg = (k, end, n=7) => { const from=end-n*864e5; const v=days.filter(r=>r.t>from&&r.t<=end&&r[k]!=null).map(r=>r[k]); return v.length? v.reduce((a,b)=>a+b)/v.length : null; };
+  const now = last.t.getTime();
+  const span = (now-first.t.getTime())/864e5;
+
+  // HERO
+  const g = D.goal, w = avg("Weight",now);
+  const pct = Math.max(0,Math.min(100,(w-g.start)/(g.target-g.start)*100));
+  const left = g.target - w;
+  const daysLeft = Math.max(1,(new Date(g.deadline)-new Date())/864e5);
+  const needWeek = left/daysLeft*7;
+  const rate = slope("Weight", days, 14);
+  app.innerHTML = `
+  <div class="hero">
+    <div class="card">
+      <div class="muted small">Вес (среднее за 7 дней)</div>
+      <div class="big">${fmt(w)} кг</div>
+      <div class="bar"><div style="width:${pct}%"></div></div>
+      <div class="small">Цель ${fmt(g.target)} кг: пройдено ${fmt(pct,0)}%, осталось ${fmt(Math.max(0,left))} кг.
+      Нужный темп — ${fmt(Math.max(0,needWeek),2)} кг в неделю. ${rate==null? "Свой темп увидишь через неделю взвешиваний." : "Сейчас — "+(rate>=0?"+":"")+fmt(rate,2)+" кг в неделю."}</div>
+    </div>
+    <div class="card advice"><b>Что делать сейчас</b><ul id="adv"></ul></div>
+  </div>
+  <h2>Последнее взвешивание — ${last.t.toLocaleDateString("ru-RU",{day:"numeric",month:"long"})}, ${last.t.toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit"})}</h2>
+  <div class="grid" id="kpis"></div>
+  <h2>Графики</h2>
+  <div class="tabs" id="tabs"></div>
+  <div class="charts" id="charts" style="margin-top:12px"></div>`;
+
+  // KPI
+  const kp = $("#kpis");
+  for(const k of metrics){
+    const m=M[k], v=last[k];
+    const prev = [...days].reverse().find(r=>r!==last && r[k]!=null);
+    const wk = avg(k, now-7*864e5);
+    const ch = (cur,base,label) => { if(cur==null||base==null) return ""; const d=cur-base; return `<span class="pill ${tone(m,d)}">${arrow(d,m)} ${d>0?"+":""}${fmt(d,m.d)} ${m.unit} ${label}</span>`; };
+    let norm = "";
+    if(m.norm && v!=null){ norm = v<m.norm[0] ? `<span class="pill bad">ниже нормы</span>` : v>m.norm[1] ? `<span class="pill bad">выше нормы</span>` : `<span class="pill good">в норме</span>`; }
+    kp.insertAdjacentHTML("beforeend",`<div class="card kpi"><div class="name">${m.name}</div><div class="val">${fmt(v,m.d)} <span class="small muted">${m.unit}</span></div>
+      ${ch(v,prev&&prev[k],"к прошлому дню")} ${span>=8?ch(avg(k,now),wk,"за неделю"):""} ${norm}<p class="muted">${m.what}</p></div>`);
+  }
+
+  // Советы
+  const adv = advice(days, avg, now, rate, needWeek, span);
+  $("#adv").innerHTML = adv.map(a=>`<li>${a}</li>`).join("");
+
+  // Графики
+  const ranges = [["30 дней",30],["3 месяца",92],["Всё",1e5]];
+  let cur = 1e5; try{ cur = +localStorage.getItem("hr") || 1e5; }catch(e){}
+  const tabs = $("#tabs");
+  const draw = () => {
+    tabs.innerHTML = ranges.map(([n,d])=>`<button class="${d===cur?"on":""}" data-d="${d}">${n}</button>`).join(" ");
+    tabs.querySelectorAll("button").forEach(b=>b.onclick=()=>{cur=+b.dataset.d; try{localStorage.setItem("hr",cur)}catch(e){} draw();});
+    charts(days.filter(r=>r.t>now-cur*864e5), metrics);
+  };
+  draw();
+  foodBlock(app);
+  watchBlock(app);
+}
+
+function foodBlock(app){
+  const F = (D.food||[]), T = D.targets;
+  app.insertAdjacentHTML("beforeend",`<h2>Питание</h2>`);
+  if(!F.length || !T){ app.insertAdjacentHTML("beforeend",`<div class="card muted">Пока нет записей. Пиши в Telegram-бот, что съел, с весом в граммах — например «гречка 200, курица 150».</div>`); return; }
+  const todayISO = new Date().toLocaleDateString("sv-SE");
+  const t = F.find(d=>d.date===todayISO) || {kcal:0,protein:0,fat:0,carbs:0};
+  const last7 = F.slice(-7), a = k => Math.round(last7.reduce((s,d)=>s+d[k],0)/last7.length);
+  const pc = (v,n)=>Math.round(v/n*100);
+  app.insertAdjacentHTML("beforeend",`<div class="grid">
+    <div class="card kpi"><div class="name">Калории сегодня</div><div class="val">${t.kcal} <span class="small muted">/ ${T.kcal} ккал</span></div>
+      <div class="bar"><div style="width:${Math.min(100,pc(t.kcal,T.kcal))}%"></div></div><p class="muted">Норма для набора: обмен в покое ≈ ${T.bmr} ккал × активность + 300 ккал сверху.</p></div>
+    <div class="card kpi"><div class="name">Белок сегодня</div><div class="val">${t.protein} <span class="small muted">/ ${T.protein} г</span></div>
+      <div class="bar"><div style="width:${Math.min(100,pc(t.protein,T.protein))}%"></div></div><p class="muted">Белок — строительный материал мышц. Норма около 1,8 г на кг веса.</p></div>
+    <div class="card kpi"><div class="name">В среднем за ${last7.length} дн.</div><div class="val">${a("kcal")} <span class="small muted">ккал</span></div>
+      <span class="pill ${a("kcal")>=T.kcal*0.95?"good":"bad"}">${pc(a("kcal"),T.kcal)}% нормы</span> <span class="pill ${a("protein")>=T.protein*0.9?"good":"bad"}">белок ${a("protein")} г</span>
+      <p class="muted">Если вес не растёт, а калорий меньше нормы — дело в еде, а не в тренировках.</p></div>
+  </div><div class="charts" style="margin-top:12px"><div class="card"><b>Калории по дням</b><canvas id="c_food"></canvas></div><div class="card"><b>Белок по дням</b> <span class="muted small">г</span><canvas id="c_prot"></canvas></div></div>`);
+  if(!window.Chart) return;
+  const cs=getComputedStyle(document.documentElement), col=n=>cs.getPropertyValue(n).trim();
+  const labels=F.map(d=>new Date(d.date).toLocaleDateString("ru-RU",{day:"numeric",month:"short"}));
+  const mk=(id,k,target)=>new Chart(document.getElementById(id),{type:"bar",data:{labels,datasets:[
+      {type:"bar",label:"Факт",data:F.map(d=>d[k]),backgroundColor:F.map(d=>d[k]>=target*0.95?col("--accent"):col("--accent2"))},
+      {type:"line",label:"Норма",data:F.map(()=>target),borderColor:col("--good"),borderDash:[6,4],pointRadius:0,borderWidth:1.5}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:col("--muted"),maxTicksLimit:7},grid:{display:false}},y:{beginAtZero:true,ticks:{color:col("--muted")},grid:{color:col("--line")}}}}});
+  mk("c_food","kcal",T.kcal); mk("c_prot","protein",T.protein);
+}
+
+function slope(k, rows, days){
+  const end = rows[rows.length-1].t.getTime();
+  const pts = rows.filter(r=>r[k]!=null && r.t>end-days*864e5).map(r=>[(r.t-end)/864e5, r[k]]);
+  if(pts.length<4 || (pts[pts.length-1][0]-pts[0][0])<5) return null;
+  const n=pts.length, mx=pts.reduce((a,p)=>a+p[0],0)/n, my=pts.reduce((a,p)=>a+p[1],0)/n;
+  const b = pts.reduce((a,p)=>a+(p[0]-mx)*(p[1]-my),0)/pts.reduce((a,p)=>a+(p[0]-mx)**2,0);
+  return b*7; // в неделю
+}
+function tone(m,d){ if(Math.abs(d)<m.thr || m.up===0) return "neu"; return (d>0)===(m.up>0) ? "good" : "bad"; }
+function arrow(d,m){ return Math.abs(d)<m.thr ? "→" : d>0 ? "↑" : "↓"; }
+
+function advice(rows, avg, now, rate, needWeek, span){
+  const a=[], last=rows[rows.length-1];
+  if(span<6) a.push("Взвешивайся каждое утро в одно время: после туалета, до еды и воды. Через 7 дней здесь появятся тренды и советы точнее.");
+  if(rate!=null){
+    if(rate<0.1) a.push(`Вес почти стоит (${fmt(rate,2)} кг/нед). Для набора добавь 200–300 ккал в день: например, порцию каши или творог с орехами.`);
+    else if(rate>0.7) a.push(`Вес растёт быстро (+${fmt(rate,2)} кг/нед). Часть может уходить в жир — убери лишнее сладкое и мучное, оставь белок.`);
+    else a.push(`Темп набора хороший (+${fmt(rate,2)} кг/нед). Продолжай в том же режиме.`);
+  }
+  const mRate = slope("MuscleMass", rows, 14), fRate = slope("BodyFat", rows, 14);
+  if(mRate!=null && mRate< -0.15) a.push("Мышечная масса снижается. Ешь больше белка — примерно 1,6–2 г на кг веса (около 120–140 г в день) — и не пропускай силовые.");
+  if(fRate!=null && fRate>0.4 && (mRate==null || mRate<0.1)) a.push("Процент жира растёт быстрее мышц. Проверь, хватает ли силовых тренировок, и сократи быстрые углеводы.");
+  if(last.VisceralFat>=10) a.push("Висцеральный жир выше нормы — стоит обсудить питание с врачом или тренером.");
+  if(last.BasalMetabolism) a.push(`Обмен в покое ≈ ${fmt(last.BasalMetabolism,0)} ккал. Для набора с учётом активности ориентир — примерно ${fmt(Math.round(last.BasalMetabolism*1.55/50)*50+300,0)} ккал в день.`);
+  if(!a.length) a.push("Всё стабильно. Продолжай взвешиваться каждый день.");
+  return a;
+}
+
+let chartObjs=[];
+function charts(rows, metrics){
+  chartObjs.forEach(c=>c.destroy()); chartObjs=[];
+  const box=$("#charts"); box.innerHTML="";
+  if(!window.Chart){ box.innerHTML='<div class="card muted">Графики не загрузились: нужен интернет.</div>'; return; }
+  const cs=getComputedStyle(document.documentElement), col=n=>cs.getPropertyValue(n).trim();
+  for(const k of metrics){
+    const m=M[k], pts=rows.filter(r=>r[k]!=null);
+    if(!pts.length) continue;
+    const ma = pts.map((r,i)=>{ const from=r.t-7*864e5; const w=pts.filter(p=>p.t>from&&p.t<=r.t).map(p=>p[k]); return w.reduce((a,b)=>a+b)/w.length; });
+    const labels = pts.map(r=>r.t.toLocaleDateString("ru-RU",{day:"numeric",month:"short"}));
+    box.insertAdjacentHTML("beforeend",`<div class="card"><b>${m.name}</b> <span class="muted small">${m.unit}${pts.length<3?" · линия среднего появится с 3-го дня":""}</span><canvas id="c_${k}"></canvas></div>`);
+    const ds=[{label:"По дням",data:pts.map(r=>r[k]),borderColor:col("--accent2"),backgroundColor:col("--accent"),pointRadius:3.5,borderWidth:1.5,showLine:pts.length<3}];
+    if(pts.length>=3) ds.push({label:"Среднее за 7 дней",data:ma,borderColor:col("--accent"),pointRadius:0,borderWidth:2.5,tension:.3});
+    chartObjs.push(new Chart(document.getElementById("c_"+k),{type:"line",data:{labels,datasets:ds},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+        scales:{x:{ticks:{color:col("--muted"),maxTicksLimit:6},grid:{display:false}},y:{grace:"10%",ticks:{color:col("--muted")},grid:{color:col("--line")}}}}}));
+  }
+}
+
+// Один день — одна точка: первое за день взвешивание с замером состава тела (утро, без влияния еды)
+function dailyOf(rows){ const m=new Map(); for(const r of rows){ const k=r.t.toLocaleDateString("sv-SE"); const c=m.get(k); if(!c || (c.BodyFat==null && r.BodyFat!=null)) m.set(k,r); } return [...m.values()]; }
+
+function watchBlock(app){
+  app.insertAdjacentHTML("beforeend",`<h2>Часы Amazfit Balance</h2><div class="card muted">Скоро: пульс, сон, стресс и готовность к тренировке. Место для этих данных уже заложено.</div>`);
+}
+// Mini App: данные берём из зашифрованного data.enc, ключ — из ссылки после «#k=»
+const TG = window.Telegram && window.Telegram.WebApp;
+if (TG) { try { TG.ready(); TG.expand(); document.documentElement.setAttribute("data-theme", TG.colorScheme === "dark" ? "dark" : "light"); } catch(e){} }
+function getKey(){
+  const all = (location.hash || "").replace(/^#/, "") + "&" + (location.search || "").replace(/^\?/, "");
+  const m = all.match(/(?:^|&)k=([A-Za-z0-9_-]+)/);
+  if (m) { try { localStorage.setItem("k", m[1]); } catch(e){} return m[1]; }
+  try { return localStorage.getItem("k"); } catch(e){ return null; }
+}
+async function loadEnc(){
+  const k = getKey();
+  if (!k) throw new Error("Нет ключа. Открой страницу кнопкой в боте.");
+  const raw = Uint8Array.from(atob(k.replace(/-/g,"+").replace(/_/g,"/") + "===".slice((k.length+3)%4)), c=>c.charCodeAt(0));
+  const key = await crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["decrypt"]);
+  const txt = await (await fetch("data.enc?t=" + Date.now(), {cache:"no-store"})).text();
+  const buf = Uint8Array.from(atob(txt.trim()), c=>c.charCodeAt(0));
+  const plain = await crypto.subtle.decrypt({name:"AES-GCM", iv: buf.slice(0,12)}, key, buf.slice(12));
+  return JSON.parse(new TextDecoder().decode(plain));
+}
+if (D) render();
+else { $("#status").textContent = "Загружаю данные…";
+  loadEnc().then(d => { D = d; render(); })
+    .catch(e => { const st=$("#status"); st.className="status err"; st.textContent = "Не удалось открыть данные: " + e.message; }); }
+</script>
+</body>
+</html>
