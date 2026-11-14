@@ -167,6 +167,7 @@ function summaryBlock(){
 }
 
 function foodBlock(app){
+  if(D.food_off) return; // учёт еды выключен (settings.json food_tracking=false), записи сохранены
   const F = (D.food||[]), T = D.targets;
   app.insertAdjacentHTML("beforeend",`<h2>Питание</h2>`);
   if(!F.length || !T){ app.insertAdjacentHTML("beforeend",`<div class="card muted">Пока нет записей. Пиши в Telegram-бот, что съел, с весом в граммах — например «гречка 200, курица 150».</div>`); return; }
