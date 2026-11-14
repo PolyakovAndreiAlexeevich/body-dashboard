@@ -87,7 +87,7 @@ function render(){
   const app = $("#app");
   if(!rows.length){
     app.innerHTML = `<div class="card empty"><b>Взвешиваний пока нет.</b><br><span class="muted">Встань на весы утром, после туалета и до еды. Через сутки данные появятся здесь сами.</span></div>`;
-    foodBlock(app); watchBlock(app); return;
+    foodBlock(app); watchBlock(app); bodyBlock(app, rows); bpBlock(app); return;
   }
   const last = days[days.length-1], first = days[0];
   const metrics = Object.keys(M).filter(k=>rows.some(r=>r[k]!=null));
@@ -150,6 +150,8 @@ function render(){
   draw();
   foodBlock(app);
   watchBlock(app);
+  bodyBlock(app, rows);
+  bpBlock(app);
 }
 
 function summaryBlock(){
@@ -245,6 +247,47 @@ function charts(rows, metrics){
 // Один день — одна точка: первое за день взвешивание с замером состава тела (утро, без влияния еды)
 function dailyOf(rows){ const m=new Map(); for(const r of rows){ const k=new Date(r.t-4*3600e3).toLocaleDateString("sv-SE"); const c=m.get(k); if(!c || (c.BodyFat==null && r.BodyFat!=null)) m.set(k,r); } return [...m.values()]; }
 
+
+// Состав тела: последний замер весов Xiaomi против последнего замера часов Balance (меряется не всегда — это нормально)
+function bodyBlock(app, rows){
+  const B = (D.watch && D.watch.body) || [];
+  const sc = [...rows].reverse().find(r=>r.BodyFat!=null);
+  const wb = B.length ? B[B.length-1] : null;
+  if(!sc && !wb) return;
+  const dd = s => new Date(String(s).replace(" ","T")).toLocaleDateString("ru-RU",{day:"numeric",month:"short"});
+  const rowsT = [["Вес","кг",sc&&sc.Weight,wb&&wb.weight,1],["Жир","%",sc&&sc.BodyFat,wb&&wb.body_fat,1],
+    ["Мышцы","кг",sc&&sc.MuscleMass,wb&&wb.muscle,1],["Скелетные мышцы","кг",sc&&sc.SkeletalMuscleMass,wb&&wb.skeletal_muscle,1],
+    ["Вода","%",sc&&sc.BodyWater,wb&&wb.water,1],["Кости","кг",sc&&sc.BoneMass,wb&&wb.bone,1],
+    ["Обмен в покое","ккал",sc&&sc.BasalMetabolism,wb&&wb.bmr,0]].filter(r=>r[2]!=null||r[3]!=null);
+  const v = (x,d) => x==null ? "—" : fmt(x,d);
+  const diff = (a,b,d) => a==null||b==null ? "" : (b-a>0?"+":"")+fmt(b-a,d);
+  // изменение по часам с прошлого замера часов
+  const wp = B.length>1 ? B[B.length-2] : null;
+  app.insertAdjacentHTML("beforeend", `<h2>Состав тела: весы и часы</h2><div class="card" style="overflow-x:auto">
+    <table style="width:100%;border-collapse:collapse;font-size:14px"><tr class="muted small"><td></td>
+    <td style="text-align:right">Весы${sc?"<br>"+dd(sc.Date):""}</td><td style="text-align:right">Часы${wb?"<br>"+dd(wb.datetime):""}</td><td style="text-align:right">Часы − весы</td></tr>
+    ${rowsT.map(r=>`<tr style="border-top:1px solid rgba(127,127,127,.2)"><td style="padding:6px 0">${r[0]} <span class="muted small">${r[1]}</span></td>
+      <td style="text-align:right">${v(r[2],r[4])}</td><td style="text-align:right">${v(r[3],r[4])}</td><td style="text-align:right" class="muted">${diff(r[2],r[3],r[4])}</td></tr>`).join("")}
+    </table>
+    ${wp&&wb?`<p class="muted small">По часам с ${dd(wp.datetime)}: жир ${diff(wp.body_fat,wb.body_fat,1)||"0"} %, мышцы ${diff(wp.muscle,wb.muscle,1)||"0"} кг.</p>`:""}
+    <p class="muted">Весы и часы считают состав тела по-разному, поэтому числа расходятся — это нормально. Сравнивай каждый прибор сам с собой: важно, куда идут жир и мышцы за 2–4 недели. Замер на часах — в одно время, лучше утром до еды. Пропустил замер — ничего страшного.</p></div>`);
+}
+// Давление: из бота («давление 125/80 пульс 70») или из Zepp. Мерить не каждый день — нормально.
+function bpBlock(app){
+  const P = ((D.watch && D.watch.bp) || []).filter(r=>r.sys&&r.dia);
+  app.insertAdjacentHTML("beforeend", `<h2>Давление</h2>`);
+  if(!P.length){ app.insertAdjacentHTML("beforeend", `<div class="card muted">Замеров пока нет. Измерь давление в покое и напиши боту: «давление 125/80» или «давление 125/80 пульс 70».</div>`); return; }
+  const last = P[P.length-1], l7 = P.slice(-7);
+  const av = k => Math.round(l7.reduce((a,r)=>a+r[k],0)/l7.length);
+  const lvl = (s,d) => s>=140||d>=90 ? [false,"выше нормы"] : s>=130||d>=85 ? [null,"верхняя граница"] : s<90||d<60 ? [false,"пониженное"] : [true,"в норме"];
+  const [ok, txt] = lvl(last.sys,last.dia);
+  const dd = s => new Date(String(s).replace(" ","T")).toLocaleString("ru-RU",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"});
+  app.insertAdjacentHTML("beforeend", `<div class="card kpi"><div class="name">Последний замер — ${dd(last.datetime)}</div>
+    <div class="val">${last.sys}/${last.dia} <span class="small muted">мм рт. ст.${last.pulse?", пульс "+fmt(last.pulse,0):""}</span></div>
+    <span class="pill ${ok===true?"good":ok===false?"bad":"neu"}">${txt}</span>${l7.length>1?` <span class="pill neu">в среднем ${av("sys")}/${av("dia")} за ${l7.length} замер.</span>`:""}
+    ${P.length>1?`<ul class="small" style="margin:8px 0 0;padding-left:18px">${P.slice(-5).reverse().map(r=>`<li>${dd(r.datetime)} — ${r.sys}/${r.dia}${r.pulse?", пульс "+fmt(r.pulse,0):""}</li>`).join("")}</ul>`:""}
+    <p class="muted">Норма — ниже 130/85. Мерь сидя, после 5 минут покоя, лучше в одно время. Один высокий замер ничего не значит; если выше 140/90 несколько дней подряд — стоит показать врачу. Не медицинский совет.</p></div>`);
+}
 function watchBlock(app){
   const W = D.watch;
   app.insertAdjacentHTML("beforeend",`<h2>Часы Amazfit Balance</h2>`);
